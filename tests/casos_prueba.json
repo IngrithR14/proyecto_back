@@ -1,0 +1,23 @@
+[
+  {
+    "id": 1,
+    "pregunta": "¿Cuántos clientes y visitas al mes tiene el universo?",
+    "espera_tool": "ver_universo",
+    "seguimiento": false,
+    "nota": "pregunta inicial de contexto"
+  },
+  {
+    "id": 2,
+    "pregunta": "¿Y cuántas de esas zonas de rutero son rutable?",
+    "espera_tool": "ver_universo",
+    "seguimiento": true,
+    "nota": "seguimiento de la pregunta 1: reutiliza el contexto de 'esas zonas'"
+  },
+  {
+    "id": 3,
+    "pregunta": "¿Y cuál es el máximo de visitas que puede hacer un asesor al día?",
+    "espera_tool": "ver_parametros",
+    "seguimiento": true,
+    "nota": "seguimiento: cambia de tema pero mantiene la conversación (el CAP)"
+  }
+]

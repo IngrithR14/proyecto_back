@@ -1,0 +1,54 @@
+{
+  "nota": "Tabla puente de alias para equipos (nivel Supervisor). Normaliza tildes, mayúsculas y el nombre dañado de Sirley (U+FFFD). La unidad de asesor es ZON_REP; el Supervisor es atributo de equipo de cada asesor.",
+  "unidad_asesor": "zon_rep",
+  "asesores": [
+    {
+      "asesor_id": "orlando_sandoval",
+      "nombre_canonico": "Orlando Sandoval Vergara",
+      "equipo": "Orlando Sandoval Vergara",
+      "alias": ["orlando sandoval vergara", "orlando sandoval", "orlando", "o sandoval"]
+    },
+    {
+      "asesor_id": "daniel_lopez",
+      "nombre_canonico": "Daniel Lopez",
+      "equipo": "Daniel Lopez",
+      "alias": ["daniel lopez", "daniel", "d lopez"]
+    },
+    {
+      "asesor_id": "santiago_piedradita",
+      "nombre_canonico": "Santiago Piedradita Mejia",
+      "equipo": "Santiago Piedradita Mejia",
+      "alias": ["santiago piedradita mejia", "santiago piedradita", "santiago", "s piedradita"]
+    },
+    {
+      "asesor_id": "edwin_amaya",
+      "nombre_canonico": "Edwin Orlando Amaya Gonzalez",
+      "equipo": "Edwin Orlando Amaya Gonzalez",
+      "alias": ["edwin orlando amaya gonzalez", "edwin amaya", "edwin", "e amaya"]
+    },
+    {
+      "asesor_id": "sonia_quintero",
+      "nombre_canonico": "Sonia Alejandra Quintero Suarez",
+      "equipo": "Sonia Alejandra Quintero Suarez",
+      "alias": ["sonia alejandra quintero suarez", "sonia quintero", "sonia", "s quintero"]
+    },
+    {
+      "asesor_id": "sirley_rodriguez",
+      "nombre_canonico": "Sirley Damaris Rodríguez Usaquén",
+      "equipo": "Sirley Damaris Rodríguez Usaquén",
+      "alias": [
+        "sirley damaris rodriguez usaquen",
+        "sirley rodriguez",
+        "sirley damaris rodríguez usaquén",
+        "sirley"
+      ],
+      "nota_datos": "En la base aparece dañada: Sirley Damaris Rodr<U+FFFD>guez Usaqu<U+FFFD>n"
+    },
+    {
+      "asesor_id": "sin_asesor",
+      "nombre_canonico": "Sin asesor",
+      "equipo": "SIN_ASESOR",
+      "alias": ["sin asesor", "sin_asignar", "sin asignar", "sin_asesor"]
+    }
+  ]
+}

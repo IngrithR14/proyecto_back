@@ -1,0 +1,42 @@
+# Entorno virtual
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# VS Code (opcional: descomenta si no quieres versionar la config del editor)
+# .vscode/
+
+# Datos sensibles (base de clientes con cédulas, teléfonos y correos)
+data/*.xlsx
+data/*.csv
+/*.xlsx
+/*.csv
+
+# Salidas generadas
+output/*.xlsx
+output/*.csv
+
+# Sistema
+.DS_Store
+
+# Seguridad: NUNCA versionar la key del LLM
+.env
+!.env.example
+
+# Cache precalculada (se regenera con `python -m app.precompute`)
+cache/*.json
+cache/*.log
+
+# Artefactos de Node / Angular (proyecto_front)
+node_modules/
+dist/
+.angular/
+

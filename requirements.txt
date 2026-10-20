@@ -1,0 +1,33 @@
+# Dependencias del proyecto — Ruteo Distribuidora Hijos de León
+# Instalar con:  python -m pip install -r requirements.txt
+#
+# Nota: al tener todo corriendo puedes regenerar versiones exactas con
+#       python -m pip freeze > requirements.txt
+
+# --- Notebook / entorno ---
+notebook
+nbformat
+
+# --- Núcleo del análisis (app/core) ---
+numpy
+pandas
+scipy
+scikit-learn
+matplotlib
+seaborn
+
+# --- Lectura/escritura de Excel ---
+openpyxl        # pd.read_excel(... .xlsx) y to_excel(...)
+
+# --- Geografía (geocodificación Nominatim / OpenStreetMap) ---
+geopy
+
+# --- API (FASE 3) ---
+fastapi
+uvicorn[standard]
+python-dotenv    # carga .env (LLM_API_KEY, etc.) — la key NUNCA se versiona
+httpx            # cliente HTTP del chatbot (Groq) y TestClient
+
+# --- Pruebas (FASE 6) ---
+pytest
+httpx            # TestClient de FastAPI usa httpx
