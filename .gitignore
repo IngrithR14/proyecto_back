@@ -35,6 +35,10 @@ output/*.csv
 cache/*.json
 cache/*.log
 
+# Privacidad: mapa nombre->EQxx y snapshots de referencia (NUNCA versionar)
+app/knowledge/asesores_privado.json
+baseline/
+
 # Artefactos de Node / Angular (proyecto_front)
 node_modules/
 dist/

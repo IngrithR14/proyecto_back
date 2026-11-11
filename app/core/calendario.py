@@ -71,7 +71,7 @@ def construir_calendario(clientes: pd.DataFrame, col_asesor: str | None = None
             if v > 0:
                 filas.append({"fecha": f, "dia_semana": r["DIAS_REP"],
                               col_asesor: r[col_asesor], "visitas": v,
-                              "equipo": r.get(cfg.COL_EQUIPO)})
+                              "equipo_codigo": r.get(cfg.COL_EQUIPO)})
     va = pd.DataFrame(filas)
     meta = {
         "anio_ref": cfg.ANIO_REF, "mes_ref": cfg.MES_REF,

@@ -1,14 +1,17 @@
-"""Tabla puente de asesores (ZON_REP) y equipos (Supervisor) — E10.
+"""Tabla puente de asesores (ZON_REP) y equipos — E10.
 
-`buscar_asesor` resuelve por nombre de equipo con coincidencia aproximada
-(difflib, umbral 0,8) sin importar tildes ni mayúsculas; también acepta el
-código de zona directamente.
+Con el CSV seudonimizado la columna de equipo es `cfg.COL_EQUIPO`
+(`equipo_codigo`: EQ01..EQ06, EQ00 = SIN_ASESOR); nunca se propagan nombres
+de supervisor. `buscar_asesor` sigue resolviendo por nombre con coincidencia
+aproximada (difflib, umbral 0,8) sólo para búsquedas internas/tests; la salida
+al usuario es siempre el código.
 """
 from __future__ import annotations
 
 import difflib
 import json
 import os
+import re
 import unicodedata
 from typing import Any
 
@@ -70,27 +73,44 @@ def buscar_asesor(texto: str) -> dict[str, Any]:
             "sugerencias": [a["nombre_canonico"] for a in cargar_asesores()[:4]]}
 
 
-def normalizar_equipo(df: pd.DataFrame) -> pd.DataFrame:
+_RE_CODIGO_EQ = re.compile(r"^EQ\d{2}$")
+
+
+def es_codigo_equipo(v: Any) -> bool:
+    """¿El valor ya es un código de equipo seudonimizado (EQ00..EQ99)?"""
+    return bool(_RE_CODIGO_EQ.match(str(v).strip().upper()))
+
+
+def normalizar_equipo(df: pd.DataFrame, col: str | None = None) -> pd.DataFrame:
     """Sustituye los nombres de Supervisor dañados por su forma canónica (E10).
 
     Combina coincidencia exacta (tras `_norm`) con difusa (difflib ≥ UMBRAL_FUZZY)
     para resolver nombres con caracteres U+FFFD que no empatan exactamente.
+
+    Si la columna ya contiene CÓDIGOS (`equipo_codigo`: EQ01..EQ06) la función
+    NO hace nada: no hay nombres que reparar ni con qué cruzarlos. Sólo se
+    normalizan valores que parecen nombres (antes de la seudonimización).
     """
     import difflib
+    out = df.copy()
+    col = col or cfg.COL_EQUIPO
+    if col not in out.columns:
+        return out
+    if len(out[col].dropna()) and out[col].dropna().map(es_codigo_equipo).all():
+        return out                              # ya seudonimizado: nada que reparar
+
     mapa: dict[str, str] = {}
     for a in cargar_asesores():
         for al in a["alias"] + [a["nombre_canonico"]]:
             mapa[_norm(al)] = a["equipo"]
         mapa[_norm(a["equipo"])] = a["equipo"]
     claves = list(mapa.keys())
-    out = df.copy()
-    col = cfg.COL_EQUIPO
-    if col not in out.columns:
-        return out
 
     cache: dict[str, str] = {}
 
     def _resolver(v):
+        if es_codigo_equipo(v):                 # código: se deja tal cual
+            return v
         k = _norm(v)
         if k in cache:
             return cache[k]
@@ -119,14 +139,17 @@ def tabla_asesores(va: pd.DataFrame, clientes: pd.DataFrame | None = None,
         equipo, cds = "", []
         if clientes is not None and col_asesor in clientes.columns:
             sub = clientes[clientes[col_asesor] == az]
-            if len(sub):
-                eq = sub[cfg.COL_EQUIPO].value_counts()
-                equipo = eq.index[0]
+            if len(sub) and cfg.COL_EQUIPO in sub.columns:
+                eq = sub[cfg.COL_EQUIPO].dropna()
+                if len(eq):
+                    # con el CSV seudonimizado aquí llega el CÓDIGO (EQ01..EQ06),
+                    # nunca el nombre del supervisor
+                    equipo = str(eq.value_counts().index[0])
                 cds = sorted(sub["Cod CD"].dropna().astype(str).unique().tolist())
         filas.append({
             "asesor_id": az,
             "nombre": az,
-            "equipo": equipo,
+            "equipo_codigo": equipo,
             "cds": cds,
             "n_clientes": int((clientes[col_asesor] == az).sum())
             if clientes is not None and col_asesor in clientes.columns else None,
@@ -142,20 +165,47 @@ def tabla_asesores(va: pd.DataFrame, clientes: pd.DataFrame | None = None,
     return filas
 
 
+def _mapa_nombre_a_codigo() -> dict[str, str]:
+    """Mapa privado `_norm(nombre) -> EQxx`. Vacío si no existe el archivo."""
+    ruta = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                        "knowledge", "asesores_privado.json")
+    if not os.path.exists(ruta):
+        return {}
+    with open(ruta, encoding="utf-8") as f:
+        return json.load(f)
+
+
 def detalle_asesor(asesor_id: str, va: pd.DataFrame, clientes: pd.DataFrame | None = None
                    ) -> dict[str, Any]:
-    """Detalle de un asesor por su código de zona o por nombre de equipo (E10)."""
+    """Detalle por código de zona (ZON_REP), por código de equipo (EQxx) o por
+    nombre de equipo (E10). TODA la salida usa `equipo_codigo`; los nombres de
+    supervisor no se devuelven nunca.
+    """
     tabla = tabla_asesores(va, clientes)
+    q = str(asesor_id).strip()
+
+    # 1) código de equipo (EQ00..EQ06)
+    if es_codigo_equipo(q):
+        cod = q.upper()
+        rel = [f for f in tabla if f["equipo_codigo"] == cod]
+        if rel:
+            return {"ok": True, "tipo": "equipo", "equipo_codigo": cod, "asesores": rel}
+        return {"ok": True, "tipo": "equipo", "equipo_codigo": cod, "asesores": [],
+                "nota": "El equipo no tiene asesores (zonas) en el universo."}
+
+    # 2) código de zona (ZON_REP)
     for f in tabla:
         if f["asesor_id"] == asesor_id:
-            return {"ok": True, "asesor": f}
-    # ¿era un nombre de equipo?
-    res = buscar_asesor(asesor_id)
-    if res.get("ok"):
-        eq = res["asesor"]["equipo"]
-        rel = [f for f in tabla if f["equipo"] == eq]
-        if rel:
-            return {"ok": True, "equipo": eq, "asesores": rel}
-        return {"ok": True, "equipo": eq, "asesores": [],
-                "nota": "El equipo no tiene asesores (zonas) en el universo."}
-    return res
+            return {"ok": True, "tipo": "zona", "asesor": f}
+
+    # 3) nombre de equipo -> código, con el mapa privado (si existe)
+    mapa = _mapa_nombre_a_codigo()
+    codigo = mapa.get(_norm(q))
+    if codigo:
+        rel = [f for f in tabla if f["equipo_codigo"] == codigo]
+        return {"ok": True, "tipo": "equipo", "equipo_codigo": codigo, "asesores": rel}
+
+    codigos = sorted({f["equipo_codigo"] for f in tabla if f["equipo_codigo"]})
+    return {"ok": False, "error_codigo": "ASESOR_NO_ENCONTRADO",
+            "mensaje": f"No existe una zona ni un equipo identificado por {q!r}.",
+            "equipo_codigo_validos": codigos}

@@ -20,7 +20,7 @@ from app.core.montecarlo import (
 from app.core.ruteo import (
     factible_orden, formar_subrutas, muestra_estratificada, rangos_cubiertos,
     segmento_servible, slots_factibles)
-from app.core.universo import cargar_universo, resumen_universos
+from app.core.universo import cargar_universo, resumen_universos, columnas_con_reemplazo
 
 
 # ---------------------------------------------------------------------------
@@ -202,8 +202,20 @@ def test_e10_no_encontrado():
 
 
 def test_e10_columnas_danadas_detectadas():
+    # (a) con datos SINTÉTICOS: un nombre de supervisor con U+FFFD sí se detecta
+    #     y `normalizar_equipo` lo repara (el CSV real ya no tiene esa columna).
+    crudo = pd.DataFrame({"Supervisor": ["Sirley Damaris Rodr\ufffdguez Usaqu\ufffdn"]})
+    assert columnas_con_reemplazo(crudo) == ["Supervisor"], "debe detectar U+FFFD en Supervisor"
+    out = normalizar_equipo(crudo, col="Supervisor")
+    assert "\ufffd" not in out["Supervisor"].iloc[0]
+    assert "Rodríguez" in out["Supervisor"].iloc[0]
+
+    # (b) el universo REAL ya viene seudonimizado: equipo_codigo y sin Supervisor
     u = cargar_universo()
-    assert "Supervisor" in u.columnas_danadas, "debe detectar U+FFFD en Supervisor"
+    assert cfg.COL_EQUIPO in u.clientes.columns, "el universo debe traer equipo_codigo"
+    assert "Supervisor" not in u.clientes.columns, "Supervisor (nombre) ya no existe en el CSV"
+    codigos = set(u.clientes[cfg.COL_EQUIPO].dropna().unique())
+    assert codigos and codigos <= {"EQ00", "EQ01", "EQ02", "EQ03", "EQ04", "EQ05", "EQ06"}, codigos
 
 
 # ---------------------------------------------------------------------------
@@ -223,7 +235,8 @@ def test_e11_unica_funciona_carga():
     for i in range(1, len(u.embudo)):
         assert u.embudo[i]["filas"] <= u.embudo[i - 1]["filas"]
         assert u.embudo[i]["eliminadas"] == (u.embudo[i - 1]["filas"] - u.embudo[i]["filas"])
-    # la vista /api/meta/universos funciona
+    # la vista /api/meta/universos funciona (agrupa por cfg.COL_EQUIPO = equipo_codigo)
+    assert cfg.COL_EQUIPO in u.clientes.columns, "la vista agrupa por la columna de equipo vigente"
     res = resumen_universos(u)
     assert res["n_clientes"] == 14757
     assert res["unidad_asesor"] == "zon_rep"

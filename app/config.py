@@ -33,7 +33,7 @@ MES_REF: int = int(os.getenv("MES_REF", "3"))         # marzo
 # ---------------------------------------------------------------------------
 UNIDAD_ASESOR: str = "zon_rep"
 COL_ASESOR: str = "ZON_REP"
-COL_EQUIPO: str = "Supervisor"          # nivel equipo, atributo del asesor
+COL_EQUIPO: str = "equipo_codigo"     # nivel equipo: códigos EQ01..EQ06 (seudonimizado)
 
 # ---------------------------------------------------------------------------
 # Jornada, servicio y capacidad (D3)
