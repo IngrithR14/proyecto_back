@@ -4,9 +4,32 @@ La API (`app/main.py`) sirve desde la cache para ser instantánea. Este módulo 
 idempotente y reanudable: si un K ya está cacheado, se omite. Uso:
 
     python -m app.precompute                 # todo (EDA + ruteo + MC + protocolo)
+    python -m app.precompute --todo          # lo mismo, explícito
+    python -m app.precompute --solo equipos  # UNA etapa, sin sus dependencias
     python -m app.precompute --rapido        # sólo EDA + ruteo + MC en K_ACTUAL
     python -m app.precompute --k 40 50 58    # sólo esos K del MC
     python -m app.precompute --rehacer       # ignora todas las caches
+
+`--todo` y `--solo` ignoran `--rapido`, `--k` y `--sin-*` (son de alcance
+completo / unitario); `--n-sim` y `--rehacer` sí se respetan. `--solo` ejecuta
+SÓLO la etapa pedida (no arrastra dependencias) y sale con código 2 y un
+mensaje claro si le falta una cache de entrada, indicando la etapa que la
+genera.
+
+ORDEN DE DEPENDENCIAS (así se corre con `--todo`):
+
+    1. general     params, universos, calendario, eda, ruteo   (sin dependencias)
+    2. mc          montecarlo.json                             (general)
+    3. geo         geo.json                                    (general)
+    4. seleccion   seleccion.json                              (general)
+    5. pliegues    pliegues.json                               (seleccion)
+    6. evaluacion  evaluacion.json                             (seleccion, mc)
+    7. comparacion comparacion_rutas.json                      (general)
+    8. rutas       rutas.json                                  (evaluacion)
+    9. equipos     equipos.json (NUEVO FASE 5)                 (general, rutas)
+
+Las 11 herramientas del chatbot leen params, universos, calendario, eda,
+montecarlo, evaluacion y equipos → todas quedan cubiertas por `--todo`.
 
 Fases del protocolo de evaluación (secciones 1-3), cada una con su cache:
 
@@ -32,12 +55,14 @@ import pandas as pd
 
 from . import config as cfg
 from .core import comparacion, eda, pliegues
+from .core.asesores import tabla_asesores
 from .core.calendario import construir_calendario, resumen_carga
 from .core.estructura import (asignacion_capacidad, construir_actual,
                               construir_rutas_diarias, rutas_primer_ciclo,
                               validar_cubierta)
 from .core.montecarlo import (carga_por_territorio_fecha, comparar_pareada,
                               costo_escenario, evaluar_estrategia,
+                              jornadas_por_escenario, resumen_jornadas,
                               factibilidad, generar_entradas,
                               horas_por_escenario, resumen_estrategia)
 from .core.universo import cargar_universo, resumen_universos
@@ -94,10 +119,15 @@ def evaluar(clientes: pd.DataFrame, labels: np.ndarray | None,
     fact = factibilidad(ctf)
     ev = evaluar_estrategia(rutas, asistencia, trafico)
     n_asesores = len(ev["territorios"])
-    costo = costo_escenario(ev, trafico, n_asesores)
-    horas = horas_por_escenario(ctf, _km_por_territorio(rutas), trafico)
+
+    # Simulador F3 (ruta por ruta): respeta POLITICA_SOBRECARGA y da la cobertura real
+    jor = jornadas_por_escenario(rutas, asistencia, trafico)
+    costo = costo_escenario(ev, trafico, n_asesores,
+                            horas_extra_h=jor["horas_extra"])
     visitas_prog = int(ctf["visitas"].sum())
-    res = resumen_estrategia(nombre, ev, costo, n_asesores, fact, horas, visitas_prog)
+    res = resumen_estrategia(nombre, ev, costo, n_asesores, fact,
+                             resumen_jornadas(jor, trafico), visitas_prog,
+                             visitas_completadas=float(jor["visitas_completadas"].mean()))
     res["n_rutas_dia"] = len(rutas)
     res["cobertura_exacta"] = validar_cubierta(rutas, len(clientes))
     return res, np.asarray(costo["total"])
@@ -139,8 +169,10 @@ def precompute_mc(ks: list[int], n_sim: int | None = None,
         print("• ACTUAL desde cache (regenerando costo para comparación)…")
         rutas_a = construir_rutas_diarias(df, labels=None)
         ev_a = evaluar_estrategia(rutas_a, asistencia, trafico)
+        jor_a = jornadas_por_escenario(rutas_a, asistencia, trafico)
         costo_actual_ref = np.asarray(
-            costo_escenario(ev_a, trafico, len(ev_a["territorios"]))["total"])
+            costo_escenario(ev_a, trafico, len(ev_a["territorios"]),
+                    horas_extra_h=jor_a["horas_extra"])["total"])
         res = actual_cache
 
     pendientes = [k for k in ks if str(k) not in estrategias or rehacer]
@@ -407,8 +439,165 @@ def precompute_rutas() -> None:
     _escribe("rutas.json", cache)
 
 
-def main() -> None:
+# ---------------------------------------------------------------------------
+# Etapa 9 (FASE 5): asesores y equipos → cache/equipos.json
+# ---------------------------------------------------------------------------
+# Contrato que leen las herramientas 10-11 (`detalle_asesor`, `ranking_asesores`):
+#   {"meta": {...}, "asesores": [fila, ...]}
+#   fila = {zona, equipo_codigo, n_clientes, visitas_ruteadas,
+#           visitas_programadas_mes, dias_operados, media_visitas_dia,
+#           pico_visitas_dia, sobre_cap, en_objetivo_40_50, n_rutas, km}
+# Sólo CÓDIGOS: `zona` = ZON_REP, `equipo_codigo` = EQ00..EQ06 (EQ00 = SIN_ASESOR).
+# Nombres de supervisor: NUNCA se escriben en esta cache.
+CAMPOS_EQUIPOS = ("zona", "equipo_codigo", "n_clientes", "visitas_ruteadas",
+                  "visitas_programadas_mes", "dias_operados", "media_visitas_dia",
+                  "pico_visitas_dia", "sobre_cap", "en_objetivo_40_50",
+                  "n_rutas", "km")
+
+
+def precompute_equipos() -> None:
+    """Asesores/zonas por equipo → `cache/equipos.json` (herramientas 10-11).
+
+    Dependencias: `general` (universo + calendario, se recalculan aquí con la
+    misma función) y `rutas` (`cache/rutas.json` para los agregados del 1er
+    ciclo). `visitas_programadas_mes` sale del calendario del mes; `visitas_ruteadas`,
+    `n_rutas` y `km` de las rutas del escenario ACTUAL (quincenas 1 y 2).
+    """
+    print("• Asesores y equipos…")
+    u = cargar_universo()
+    va, _meta = construir_calendario(u.clientes)
+    filas = tabla_asesores(va, u.clientes)
+
+    esc = ((_lee("rutas.json") or {}).get("actual")) or {}
+    if not esc:
+        print("  ⚠ falta cache/rutas.json: visitas_ruteadas/n_rutas/km quedan en 0")
+    por_zona: dict[str, dict[str, float]] = {}
+    for quincena in ("1", "2"):
+        for dia in esc.get(quincena) or []:
+            z = str(dia.get("asesor") or "")
+            agg = por_zona.setdefault(z, {"n_rutas": 0.0, "visitas_ruteadas": 0.0,
+                                          "km": 0.0})
+            agg["n_rutas"] += 1
+            agg["visitas_ruteadas"] += float(dia.get("n_visitas") or 0)
+            agg["km"] += float(dia.get("km") or 0.0)
+
+    asesores: list[dict[str, Any]] = []
+    for f in filas:
+        z = str(f.get("asesor_id") or "")
+        agg = por_zona.get(z, {})
+        asesores.append({
+            "zona": z,
+            # sin equipo en el CSV → EQ00 (SIN_ASESOR), nunca el nombre
+            "equipo_codigo": (str(f.get("equipo_codigo") or "").strip() or "EQ00"),
+            "n_clientes": f.get("n_clientes"),
+            "visitas_ruteadas": int(agg.get("visitas_ruteadas", 0.0)),
+            "visitas_programadas_mes": int(f.get("visitas_mes") or 0),
+            "dias_operados": f.get("dias_operados"),
+            "media_visitas_dia": f.get("media_visitas_dia"),
+            "pico_visitas_dia": f.get("pico_visitas_dia"),
+            "sobre_cap": f.get("sobre_cap"),
+            "en_objetivo_40_50": f.get("en_objetivo_40_50"),
+            "n_rutas": int(agg.get("n_rutas", 0.0)),
+            "km": round(float(agg.get("km", 0.0)), 2),
+        })
+    asesores.sort(key=lambda x: x["zona"])
+
+    _escribe("equipos.json", {
+        "meta": {
+            "n_asesores": len(asesores),
+            "cap_dinamico": cfg.cap_dinamico(),
+            "obj_min": cfg.OBJ_MIN,
+            "obj_max": cfg.OBJ_MAX,
+            "escenario_rutas": "actual (1er ciclo: quincenas 1 y 2)",
+            "nota": ("Una fila por zona (ZON_REP). visitas_programadas_mes = plan "
+                     "del mes completo (calendario); visitas_ruteadas/n_rutas/km = "
+                     "rutas del 1er ciclo. Sólo códigos: sin nombres de supervisor."),
+        },
+        "asesores": asesores,
+    })
+
+
+# Orden de dependencias de las etapas (ver docstring del módulo)
+ORDEN_ETAPAS = ("general", "mc", "geo", "seleccion", "pliegues", "evaluacion",
+                "comparacion", "rutas", "equipos")
+
+# etapa -> caches que ESCRIBE (para decir quién genera una dependencia faltante)
+GENERADOS: dict[str, tuple[str, ...]] = {
+    "general": ("params.json", "universos.json", "calendario.json", "eda.json",
+                "ruteo.json"),
+    "mc": ("montecarlo.json",),
+    "geo": ("geo.json",),
+    "seleccion": ("seleccion.json",),
+    "pliegues": ("pliegues.json",),
+    "evaluacion": ("evaluacion.json",),
+    "comparacion": ("comparacion_rutas.json",),
+    "rutas": ("rutas.json",),
+    "equipos": ("equipos.json",),
+}
+
+# etapa -> caches de ENTRADA requeridas (comprobadas con `--solo`)
+DEPENDENCIAS: dict[str, tuple[str, ...]] = {
+    "general": (),
+    "mc": (),
+    "geo": (),
+    "seleccion": (),
+    "pliegues": ("seleccion.json",),
+    "evaluacion": ("seleccion.json",),
+    "comparacion": (),
+    "rutas": ("evaluacion.json",),
+    "equipos": ("rutas.json",),
+}
+
+
+def _etapa_que_genera(cache: str) -> str:
+    for etapa, generados in GENERADOS.items():
+        if cache in generados:
+            return etapa
+    return "general"
+
+
+def _etapas(args: argparse.Namespace) -> list[tuple[str, Any]]:
+    """(nombre, función) de cada etapa en `ORDEN_ETAPAS`, según los flags."""
+    def _mc() -> None:
+        if args.k:
+            ks = args.k
+        elif args.rapido:
+            ks = [cfg.K_ACTUAL, cfg.K_MIN]
+        else:
+            ks = list(range(cfg.K_MIN, cfg.K_MAX + 1, cfg.K_PASO))
+        precompute_mc(ks, n_sim=args.n_sim, rehacer=args.rehacer)
+
+    def _geo() -> None:
+        geo_ks = [None, cfg.K_ACTUAL] + ([cfg.K_MIN] if not args.rapido else [])
+        precompute_geo(sorted(set(geo_ks), key=lambda x: (x is not None, x)))
+
+    plan: list[tuple[str, Any]] = [("general", precompute_general)]
+    if args.sin_mc:
+        return plan                      # sólo EDA+ruteo (comportamiento previo)
+    plan += [("mc", _mc), ("geo", _geo)]
+    if not args.sin_seleccion:
+        plan.append(("seleccion",
+                     lambda: precompute_seleccion(rehacer=args.rehacer)))
+    plan.append(("pliegues", lambda: precompute_pliegues(rehacer=args.rehacer)))
+    if not args.sin_evaluacion:
+        plan.append(("evaluacion",
+                     lambda: precompute_evaluacion(rehacer=args.rehacer)))
+    if not args.sin_comparacion:
+        plan.append(("comparacion",
+                     lambda: precompute_comparacion_rutas(rehacer=args.rehacer)))
+    plan.append(("rutas", precompute_rutas))
+    plan.append(("equipos", precompute_equipos))
+    return plan
+
+
+def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description="Precomputa la cache de la API")
+    ap.add_argument("--todo", action="store_true",
+                    help="todas las etapas en orden de dependencias "
+                         "(ignora --rapido/--k/--sin-*)")
+    ap.add_argument("--solo", metavar="ETAPA",
+                    help="sólo esa etapa, sin arrastrar dependencias: "
+                         + ", ".join(ORDEN_ETAPAS))
     ap.add_argument("--rapido", action="store_true", help="sólo EDA+ruteo+MC en K_ACTUAL")
     ap.add_argument("--k", nargs="*", type=int, help="K específicos del MonteCarlo")
     ap.add_argument("--n-sim", type=int, default=None, help="escenarios (default cfg.N_SIM)")
@@ -419,32 +608,34 @@ def main() -> None:
                     help="omite el experimento NN vs ACO por ruta")
     ap.add_argument("--sin-evaluacion", action="store_true",
                     help="omite la evaluación de estrategias (8 dimensiones)")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
-    precompute_general()
-    if args.sin_mc:
+    if args.todo or args.solo:
+        # alcance completo/unitario: los flags de recorte no aplican
+        args.rapido = False
+        args.k = None
+        args.sin_mc = args.sin_seleccion = False
+        args.sin_evaluacion = args.sin_comparacion = False
+
+    plan = _etapas(args)
+
+    if args.solo:
+        nombre = str(args.solo).strip().lower()
+        if nombre not in dict(plan):
+            ap.error(f"etapa desconocida {args.solo!r}; opciones: "
+                     f"{', '.join(ORDEN_ETAPAS)}")
+        faltan = [c for c in DEPENDENCIAS.get(nombre, ())
+                  if not os.path.exists(os.path.join(cfg.CACHE_DIR, c))]
+        if faltan:
+            print(f"✗ falta cache/{', cache/'.join(faltan)} (dependencia de "
+                  f"--solo {nombre}); ejecuta primero: `python -m app.precompute "
+                  f"--solo {_etapa_que_genera(faltan[0])}`")
+            raise SystemExit(2)
+        dict(plan)[nombre]()
         return
-    if args.k:
-        ks = args.k
-    elif args.rapido:
-        ks = [cfg.K_ACTUAL, cfg.K_MIN]
-    else:
-        ks = list(range(cfg.K_MIN, cfg.K_MAX + 1, cfg.K_PASO))
-    precompute_mc(ks, n_sim=args.n_sim, rehacer=args.rehacer)
-    # geo: ACTUAL + algunos K representativos
-    geo_ks = [None, cfg.K_ACTUAL] + ([cfg.K_MIN] if not args.rapido else [])
-    precompute_geo(sorted(set(geo_ks), key=lambda x: (x is not None, x)))
 
-    # --- protocolo de evaluación (secciones 1-3) ---
-    if not args.sin_seleccion:
-        precompute_seleccion(rehacer=args.rehacer)
-    precompute_pliegues(rehacer=args.rehacer)
-    if not args.sin_evaluacion:
-        precompute_evaluacion(rehacer=args.rehacer)
-    if not args.sin_comparacion:
-        precompute_comparacion_rutas(rehacer=args.rehacer)
-    # rutas del primer ciclo (usa la regla de la sección 3)
-    precompute_rutas()
+    for _nombre, fn in plan:
+        fn()
 
 
 if __name__ == "__main__":
