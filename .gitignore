@@ -15,6 +15,7 @@ __pycache__/
 # .vscode/
 
 # Datos sensibles (base de clientes con cédulas, teléfonos y correos)
+data/
 data/*.xlsx
 data/*.csv
 /*.xlsx
@@ -32,12 +33,17 @@ output/*.csv
 !.env.example
 
 # Cache precalculada (se regenera con `python -m app.precompute`)
+cache/*
 cache/*.json
 cache/*.log
 
 # Privacidad: mapa nombre->EQxx y snapshots de referencia (NUNCA versionar)
 app/knowledge/asesores_privado.json
 baseline/
+
+# Auditoría FASE 5: logs de ejecución y listado de nombres (NUNCA versionar)
+logs/
+nombres.txt
 
 # Artefactos de Node / Angular (proyecto_front)
 node_modules/
