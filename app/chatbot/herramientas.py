@@ -1,9 +1,14 @@
-"""Capa de herramientas del chatbot (FASE 4) — 9 funciones que el LLM puede llamar.
+"""Capa de herramientas del chatbot (FASE 4) — 11 funciones que el LLM puede llamar.
 
 Cada herramienta es una función pura (testeable sin LLM) que devuelve un dict
 JSON-safe. **Privacidad**: nunca exponen `Identificacion`, `Cliente` ni
 `Direccion`; sólo agregados y coordenadas. Leen de la cache (`cache/*.json`) que
 genera `app/precompute.py`; si falta una K, la calculan al vuelo.
+
+Las herramientas 10-11 (`detalle_asesor`, `ranking_asesores`) son de excepción:
+leen SOLO `cache/equipos.json` (nunca el CSV ni `cargar_universo()` en runtime)
+y su salida sólo lleva códigos (`zona`, `equipo_codigo` EQ00..EQ06), jamás
+nombres de supervisor ni datos de clientes.
 """
 from __future__ import annotations
 
@@ -16,6 +21,7 @@ import numpy as np
 import pandas as pd
 
 from .. import config as cfg
+from ..core.asesores import es_codigo_equipo
 
 _LOCK = threading.Lock()
 
@@ -60,7 +66,7 @@ def _asegurar_k(K: int) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# 9 herramientas
+# 11 herramientas
 # ---------------------------------------------------------------------------
 def ver_parametros(_entrada: dict | None = None) -> dict:
     """1. Parámetros del modelo y supuestos (calibrado/supuesto)."""
@@ -192,6 +198,119 @@ def mejor_estrategia(_entrada: dict | None = None) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Asesores y equipos (10-11) — SOLO cache/equipos.json
+# ---------------------------------------------------------------------------
+# Contrato de `cache/equipos.json` (lo genera `app/precompute.py`, Bloque E):
+#   {"meta": {"n_asesores", "cap_dinamico", "obj_min", "obj_max", "nota"},
+#    "asesores": [fila, ...]}
+#   fila = {zona, equipo_codigo, n_clientes, visitas_ruteadas,
+#           visitas_programadas_mes, dias_operados, media_visitas_dia,
+#           pico_visitas_dia, sobre_cap, en_objetivo_40_50, n_rutas, km}
+# `zona` es el código ZON_REP; `equipo_codigo` es EQ00..EQ06 (EQ00 = SIN_ASESOR).
+# `visitas_programadas_mes` sale del calendario; `visitas_ruteadas`/`n_rutas`/`km`
+# salen de las rutas del 1er ciclo. Nombres de supervisor: NUNCA.
+_CAMPOS_FILA = ("zona", "equipo_codigo", "n_clientes", "visitas_ruteadas",
+                "visitas_programadas_mes", "dias_operados", "media_visitas_dia",
+                "pico_visitas_dia", "sobre_cap", "en_objetivo_40_50")
+
+# orden pedido por el usuario -> columna de la fila en cache/equipos.json
+_ORDEN_RANKING: dict[str, str] = {
+    "visitas": "visitas_programadas_mes",
+    "rutas": "n_rutas",
+    "km": "km",
+    "pico": "pico_visitas_dia",
+}
+_TOP_MAX = 20
+
+
+def _equipos_cache() -> dict | None:
+    """`cache/equipos.json` tal cual; None si aún no se precalculó.
+
+    Es la ÚNICA fuente en runtime de las herramientas 10-11: aquí no se abre el
+    CSV ni se llama `cargar_universo()` (decisión de arquitectura FASE 5).
+    """
+    return _cache("equipos.json")
+
+
+def detalle_asesor(entrada: dict | None = None) -> dict:
+    """10. Detalle de una zona (ZON_REP) o de un equipo (EQ00..EQ06).
+
+    Entrada: `{"zona": "COM2AA"}` o `{"equipo": "EQ01"}` (una de las dos).
+    Salida: códigos y agregados; sin nombres de supervisor ni PII de clientes.
+    """
+    e = _equipos_cache()
+    if not e:
+        return {"error": "equipos no precalculado (ejecuta `python -m app.precompute`)"}
+    filas: list[dict] = list(e.get("asesores") or [])
+    ent = entrada or {}
+    q = str(ent.get("zona") or ent.get("equipo") or "").strip()
+    if not q:
+        return {"error": "indica `zona` (código ZON_REP) o `equipo` (EQ00..EQ06)"}
+
+    # 1) código de equipo -> todas sus zonas
+    if es_codigo_equipo(q):
+        cod = q.upper()
+        rel = [f for f in filas if str(f.get("equipo_codigo", "")).upper() == cod]
+        return {"ok": True, "tipo": "equipo", "equipo_codigo": cod,
+                "n_asesores": len(rel),
+                "asesores": [{k: f.get(k) for k in _CAMPOS_FILA} for f in rel],
+                **({} if rel else
+                   {"nota": "El equipo no tiene zonas en cache/equipos.json."})}
+
+    # 2) código de zona (ZON_REP, sin distinguir mayúsculas)
+    for f in filas:
+        if str(f.get("zona", "")).upper() == q.upper():
+            return {"ok": True, "tipo": "zona", **{k: f.get(k) for k in _CAMPOS_FILA}}
+
+    codigos = sorted({str(f.get("equipo_codigo", "")).upper()
+                      for f in filas if f.get("equipo_codigo")})
+    return {"ok": False, "error_codigo": "ASESOR_NO_ENCONTRADO",
+            "mensaje": f"No existe una zona ni un equipo identificado por {q!r}.",
+            "equipo_codigo_validos": codigos}
+
+
+def ranking_asesores(entrada: dict | None = None) -> dict:
+    """11. Ranking de zonas/asesores por visitas, rutas, km o pico (top 1..20).
+
+    Entrada: `orden` = visitas|rutas|km|pico (por defecto visitas),
+    `sentido` = mayor|menor (por defecto mayor), `top` = 1..20 (por defecto 10).
+    `visitas` = visitas_programadas_mes; `pico` = pico_visitas_dia.
+    """
+    e = _equipos_cache()
+    if not e:
+        return {"error": "equipos no precalculado (ejecuta `python -m app.precompute`)"}
+    ent = entrada or {}
+
+    orden = str(ent.get("orden") or "visitas").strip().lower()
+    if orden not in _ORDEN_RANKING:
+        return {"error": f"orden inválido: {orden!r}",
+                "ordenes_validos": sorted(_ORDEN_RANKING)}
+    sentido = str(ent.get("sentido") or "mayor").strip().lower()
+    if sentido not in ("mayor", "menor"):
+        return {"error": f"sentido inválido: {sentido!r}",
+                "sentidos_validos": ["mayor", "menor"]}
+    try:
+        top = int(ent.get("top", 10))
+    except (TypeError, ValueError):
+        top = 10
+    top = max(1, min(top, _TOP_MAX))
+
+    filas: list[dict] = list(e.get("asesores") or [])
+    clave = _ORDEN_RANKING[orden]
+    filas.sort(key=lambda f: f.get(clave) or 0, reverse=(sentido == "mayor"))
+    return {
+        "orden": orden, "sentido": sentido, "top": top,
+        "n_asesores": len(filas),
+        "criterio": f"{'Mayores' if sentido == 'mayor' else 'Menores'} {orden} primero",
+        "filas": [{"zona": f.get("zona"), "equipo_codigo": f.get("equipo_codigo"),
+                   "visitas": f.get("visitas_programadas_mes"),
+                   "n_rutas": f.get("n_rutas"), "km": f.get("km"),
+                   "pico": f.get("pico_visitas_dia"), "sobre_cap": f.get("sobre_cap")}
+                  for f in filas[:top]],
+    }
+
+
+# ---------------------------------------------------------------------------
 # Registro (esquema OpenAI function-calling + función)
 # ---------------------------------------------------------------------------
 HERRAMIENTAS: dict[str, dict[str, Any]] = {
@@ -239,6 +358,29 @@ HERRAMIENTAS: dict[str, dict[str, Any]] = {
         "descripcion": "Estrategia recomendada según la regla de decisión (6 condiciones "
                        "contra ACTUAL): resultado, tabla de estrategias y umbrales.",
         "parametros": {"type": "object", "properties": {}, "required": []},
+    },
+    "detalle_asesor": {
+        "fn": detalle_asesor,
+        "descripcion": "Detalle de una zona de rutero (código ZON_REP) o de un equipo "
+                       "(EQ01..EQ06): n_clientes, visitas del mes y del ruteo, días "
+                       "operados, media/pico de carga y si está sobre CAP u en objetivo. "
+                       "Devuelve códigos, nunca nombres de supervisor ni datos de clientes.",
+        "parametros": {"type": "object", "properties": {
+            "zona": {"type": "string", "description": "código de zona/rutero (p. ej. COM2AA)"},
+            "equipo": {"type": "string", "description": "código de equipo EQ01..EQ06"}},
+            "required": []},
+    },
+    "ranking_asesores": {
+        "fn": ranking_asesores,
+        "descripcion": "Ranking de zonas/asesores por visitas, rutas, km o pico de carga "
+                       "(top 1..20, con sentido mayor/menor).",
+        "parametros": {"type": "object", "properties": {
+            "orden": {"type": "string", "enum": ["visitas", "rutas", "km", "pico"],
+                      "description": "criterio de orden (por defecto visitas)"},
+            "sentido": {"type": "string", "enum": ["mayor", "menor"],
+                        "description": "por defecto mayor"},
+            "top": {"type": "integer", "description": "cuántas zonas (1-20, por defecto 10)"}},
+            "required": []},
     },
 }
 

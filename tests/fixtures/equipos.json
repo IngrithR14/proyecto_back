@@ -1,0 +1,81 @@
+{
+  "meta": {
+    "n_asesores": 5,
+    "cap_dinamico": 44,
+    "obj_min": 40,
+    "obj_max": 50,
+    "nota": "Fixture de pruebas (tests/fixtures/equipos.json) con el MISMO contrato que genera app/precompute.py en cache/equipos.json. Datos sintéticos; sin nombres de supervisor ni datos de clientes."
+  },
+  "asesores": [
+    {
+      "zona": "Z01",
+      "equipo_codigo": "EQ01",
+      "n_clientes": 300,
+      "visitas_ruteadas": 812,
+      "visitas_programadas_mes": 870,
+      "dias_operados": 20,
+      "media_visitas_dia": 43.5,
+      "pico_visitas_dia": 52,
+      "sobre_cap": true,
+      "en_objetivo_40_50": true,
+      "n_rutas": 76,
+      "km": 640.5
+    },
+    {
+      "zona": "Z02",
+      "equipo_codigo": "EQ01",
+      "n_clientes": 250,
+      "visitas_ruteadas": 766,
+      "visitas_programadas_mes": 820,
+      "dias_operados": 20,
+      "media_visitas_dia": 41.0,
+      "pico_visitas_dia": 44,
+      "sobre_cap": false,
+      "en_objetivo_40_50": true,
+      "n_rutas": 72,
+      "km": 512.3
+    },
+    {
+      "zona": "Z03",
+      "equipo_codigo": "EQ02",
+      "n_clientes": 320,
+      "visitas_ruteadas": 871,
+      "visitas_programadas_mes": 930,
+      "dias_operados": 20,
+      "media_visitas_dia": 46.5,
+      "pico_visitas_dia": 61,
+      "sobre_cap": true,
+      "en_objetivo_40_50": true,
+      "n_rutas": 81,
+      "km": 733.8
+    },
+    {
+      "zona": "Z04",
+      "equipo_codigo": "EQ02",
+      "n_clientes": 180,
+      "visitas_ruteadas": 720,
+      "visitas_programadas_mes": 770,
+      "dias_operados": 20,
+      "media_visitas_dia": 38.5,
+      "pico_visitas_dia": 43,
+      "sobre_cap": false,
+      "en_objetivo_40_50": false,
+      "n_rutas": 66,
+      "km": 388.2
+    },
+    {
+      "zona": "Z05",
+      "equipo_codigo": "EQ03",
+      "n_clientes": 210,
+      "visitas_ruteadas": 735,
+      "visitas_programadas_mes": 790,
+      "dias_operados": 20,
+      "media_visitas_dia": 39.5,
+      "pico_visitas_dia": 45,
+      "sobre_cap": true,
+      "en_objetivo_40_50": false,
+      "n_rutas": 70,
+      "km": 559.4
+    }
+  ]
+}

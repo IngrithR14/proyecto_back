@@ -125,11 +125,11 @@ def test_chatbot_casos(cid, pregunta, tool, entrada, check):
                           f"{ {k: salida[k] for k in list(salida)[:6]} }"
 
 
-def test_nueve_herramientas():
-    """El chatbot expone exactamente 9 herramientas (requerimiento FASE 4)."""
-    assert len(H.HERRAMIENTAS) == 9
+def test_once_herramientas():
+    """El chatbot expone exactamente 11 herramientas (FASE 4 + FASE 5)."""
+    assert len(H.HERRAMIENTAS) == 11
     schemas = H.schemas_tool()
-    assert len(schemas) == 9
+    assert len(schemas) == 11
     assert all(s["type"] == "function" for s in schemas)
     assert {s["function"]["name"] for s in schemas} == set(H.HERRAMIENTAS)
 
@@ -252,7 +252,8 @@ def test_todas_las_herramientas_no_lanzan():
         "ver_parametros": {}, "ver_universo": {}, "ver_calendario": {}, "ver_eda": {},
         "carga_por_zona": {"top": 5}, "factibilidad": {"k": 45},
         "estrategia": {"k": 45}, "comparar_estrategia": {"k": 45},
-        "mejor_estrategia": {},
+        "mejor_estrategia": {}, "detalle_asesor": {"zona": "Z01"},
+        "ranking_asesores": {"orden": "visitas", "top": 5},
     }
     for nombre in H.HERRAMIENTAS:
         salida = H.ejecutar(nombre, entradas[nombre])
