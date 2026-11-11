@@ -194,8 +194,10 @@ CHAT_RATE_LIMIT: str = "20/minute"
 DATA_DIR: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 CACHE_DIR: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cache")
 BASE_CSV: str = "base_clientes_limpia.csv"
-FRONTEND_ORIGINS: tuple[str, ...] = (
-    "http://localhost:4200", "http://127.0.0.1:4200",
+FRONTEND_ORIGINS: tuple[str, ...] = tuple(
+    o.strip().rstrip("/") for o in os.getenv(
+        "FRONTEND_ORIGINS", "http://localhost:4200,http://127.0.0.1:4200"
+    ).split(",") if o.strip()
 )
 ESPERA_SEGMENTOS_S: float = 60.0      # timeout de escenarios
 

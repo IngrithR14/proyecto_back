@@ -65,7 +65,7 @@ def _o_cache(nombre: str) -> Any:
 # ---------------------------------------------------------------------------
 @app.get("/api/salud")
 def salud() -> dict:
-    return {"ok": True, "version": app.version, "cache_dir": cfg.CACHE_DIR,
+    return {"ok": True, "version": app.version, 
             "montecarlo_cacheado": _cache("montecarlo.json") is not None}
 
 
@@ -309,8 +309,9 @@ def _http_llm(e: "chatbot.LLMError") -> HTTPException:
 @app.post("/api/chat")
 def chat(entrada: ChatIn, request: Request) -> dict:
     from . import chatbot
-    sid = entrada.sesion or (request.client.host if request.client else "anon")
-    if not _rate_limit(sid):
+    ip = request.client.host if request.client else "anon"
+    sid = (entrada.sesion or ip)[:64]          # sesión solo para la memoria del chat
+    if not _rate_limit("ip:" + ip) or not _rate_limit("global", 120):
         raise HTTPException(429, "Demasiadas preguntas; espera un minuto.")
     if not entrada.pregunta.strip():
         raise HTTPException(422, "pregunta vacía")
