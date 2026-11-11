@@ -19,5 +19,37 @@
     "espera_tool": "ver_parametros",
     "seguimiento": true,
     "nota": "seguimiento: cambia de tema pero mantiene la conversación (el CAP)"
+  },
+  {
+    "id": 4,
+    "pregunta": "¿Cómo está el equipo EQ01: sus zonas, visitas y carga?",
+    "espera_tool": "detalle_asesor",
+    "entrada": {"equipo": "EQ01"},
+    "seguimiento": false,
+    "nota": "herramienta nueva (FASE 5): detalle por equipo, sólo códigos EQxx"
+  },
+  {
+    "id": 5,
+    "pregunta": "¿Cuáles son las 5 zonas con más visitas programadas al mes?",
+    "espera_tool": "ranking_asesores",
+    "entrada": {"orden": "visitas", "sentido": "mayor", "top": 5},
+    "seguimiento": false,
+    "nota": "ranking por visitas_programadas_mes (plan del mes completo)"
+  },
+  {
+    "id": 6,
+    "pregunta": "¿Y cuáles son las que más visitas ruteadas llevan en el primer ciclo?",
+    "espera_tool": "ranking_asesores",
+    "entrada": {"orden": "visitas_ruteadas", "sentido": "mayor", "top": 5},
+    "seguimiento": true,
+    "nota": "seguimiento del 5: distingue ruteadas (1er ciclo) de programadas (mes)"
+  },
+  {
+    "id": 7,
+    "pregunta": "¿Qué zonas tienen el pico de carga más alto y cuáles pasan del CAP?",
+    "espera_tool": "ranking_asesores",
+    "entrada": {"orden": "pico", "sentido": "mayor", "top": 5},
+    "seguimiento": false,
+    "nota": "ranking por pico_visitas_dia; cruza con `sobre_cap` (tope ≈44)"
   }
 ]

@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from pathlib import Path
 
 import httpx
@@ -274,21 +275,37 @@ def test_casos_prueba_existe_y_tiene_seguimiento():
 # ---------------------------------------------------------------------------
 @pytest.mark.llm
 def test_llm_real_casos_seguimiento(llm_disponible):
-    """D5.7: casos 1-3 (2 y 3 = seguimiento) con el modelo configurado en .env.
+    """D5.7: todos los casos de `tests/casos_prueba.json` con el modelo de .env.
 
     Valida que cada turno responda de forma no vacía/no truncada y respete la
-    privacidad, usando la MISMA sesión para que los seguimientos tengan contexto.
+    privacidad, usando la MISMA sesión para que los seguimientos tengan contexto
+    (los casos 2, 3 y 6 son de seguimiento; los 4-7 cubren las herramientas
+    `detalle_asesor` y `ranking_asesores` de la FASE 5).
+
+    Groq limita las llamadas por minuto: los casos se espacian y un 429 se
+    reintenta UNA vez tras esperar. Las aserciones no cambian.
     """
     if not llm_disponible:
         pytest.skip("LLM no configurado (.env)")
     from app.chatbot import chat
+    from app.chatbot.orquestador import LLMError
 
     ruta = Path(__file__).parent / "casos_prueba.json"
     casos = json.loads(ruta.read_text(encoding="utf-8"))
     sid = "t_llm_seguimiento"
     modelos: set[str] = set()
-    for c in casos:
-        r = chat(c["pregunta"], sid=sid)
+    for i, c in enumerate(casos):
+        if i:
+            time.sleep(3)                    # pacing anti-429
+        r = None
+        for intento in range(2):
+            try:
+                r = chat(c["pregunta"], sid=sid)
+                break
+            except LLMError as e:
+                if intento or "429" not in str(e):
+                    raise                    # sólo se reintenta un rate-limit
+                time.sleep(30)
         if r.get("modelo"):
             modelos.add(r["modelo"])
         assert r["respuesta"], f"caso {c['id']}: respuesta vacía"
