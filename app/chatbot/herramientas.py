@@ -214,13 +214,19 @@ _CAMPOS_FILA = ("zona", "equipo_codigo", "n_clientes", "visitas_ruteadas",
                 "pico_visitas_dia", "sobre_cap", "en_objetivo_40_50")
 
 # orden pedido por el usuario -> columna de la fila en cache/equipos.json
+# (también es el valor exacto que se devuelve en `ordenado_por`)
 _ORDEN_RANKING: dict[str, str] = {
     "visitas": "visitas_programadas_mes",
+    "visitas_ruteadas": "visitas_ruteadas",
     "rutas": "n_rutas",
     "km": "km",
     "pico": "pico_visitas_dia",
 }
 _TOP_MAX = 20
+
+# Mensaje único cuando falta la cache: sin rutas de archivo ni trazas, para que
+# el chat lo traduzca a lenguaje normal (prompt del Bloque C).
+SIN_CACHE = "Datos de asesores no disponibles (cache no generada)"
 
 
 def _equipos_cache() -> dict | None:
@@ -240,7 +246,7 @@ def detalle_asesor(entrada: dict | None = None) -> dict:
     """
     e = _equipos_cache()
     if not e:
-        return {"error": "equipos no precalculado (ejecuta `python -m app.precompute`)"}
+        return {"error": SIN_CACHE}
     filas: list[dict] = list(e.get("asesores") or [])
     ent = entrada or {}
     q = str(ent.get("zona") or ent.get("equipo") or "").strip()
@@ -255,7 +261,7 @@ def detalle_asesor(entrada: dict | None = None) -> dict:
                 "n_asesores": len(rel),
                 "asesores": [{k: f.get(k) for k in _CAMPOS_FILA} for f in rel],
                 **({} if rel else
-                   {"nota": "El equipo no tiene zonas en cache/equipos.json."})}
+                   {"nota": "El equipo no tiene zonas registradas."})}
 
     # 2) código de zona (ZON_REP, sin distinguir mayúsculas)
     for f in filas:
@@ -272,13 +278,17 @@ def detalle_asesor(entrada: dict | None = None) -> dict:
 def ranking_asesores(entrada: dict | None = None) -> dict:
     """11. Ranking de zonas/asesores por visitas, rutas, km o pico (top 1..20).
 
-    Entrada: `orden` = visitas|rutas|km|pico (por defecto visitas),
-    `sentido` = mayor|menor (por defecto mayor), `top` = 1..20 (por defecto 10).
-    `visitas` = visitas_programadas_mes; `pico` = pico_visitas_dia.
+    Entrada: `orden` = visitas|visitas_ruteadas|rutas|km|pico (por defecto
+    visitas), `sentido` = mayor|menor (por defecto mayor), `top` = 1..20
+    (por defecto 10).
+    `visitas` = visitas_programadas_mes (plan del mes completo) y
+    `visitas_ruteadas` = lo que quedó en las rutas del 1er ciclo; `pico` =
+    pico_visitas_dia. La salida trae `ordenado_por` con el nombre exacto de la
+    métrica usada y las dos columnas de visitas por separado.
     """
     e = _equipos_cache()
     if not e:
-        return {"error": "equipos no precalculado (ejecuta `python -m app.precompute`)"}
+        return {"error": SIN_CACHE}
     ent = entrada or {}
 
     orden = str(ent.get("orden") or "visitas").strip().lower()
@@ -299,11 +309,12 @@ def ranking_asesores(entrada: dict | None = None) -> dict:
     clave = _ORDEN_RANKING[orden]
     filas.sort(key=lambda f: f.get(clave) or 0, reverse=(sentido == "mayor"))
     return {
-        "orden": orden, "sentido": sentido, "top": top,
+        "orden": orden, "ordenado_por": clave, "sentido": sentido, "top": top,
         "n_asesores": len(filas),
-        "criterio": f"{'Mayores' if sentido == 'mayor' else 'Menores'} {orden} primero",
+        "criterio": f"{'Mayores' if sentido == 'mayor' else 'Menores'} {clave} primero",
         "filas": [{"zona": f.get("zona"), "equipo_codigo": f.get("equipo_codigo"),
-                   "visitas": f.get("visitas_programadas_mes"),
+                   "visitas_programadas_mes": f.get("visitas_programadas_mes"),
+                   "visitas_ruteadas": f.get("visitas_ruteadas"),
                    "n_rutas": f.get("n_rutas"), "km": f.get("km"),
                    "pico": f.get("pico_visitas_dia"), "sobre_cap": f.get("sobre_cap")}
                   for f in filas[:top]],
@@ -372,11 +383,16 @@ HERRAMIENTAS: dict[str, dict[str, Any]] = {
     },
     "ranking_asesores": {
         "fn": ranking_asesores,
-        "descripcion": "Ranking de zonas/asesores por visitas, rutas, km o pico de carga "
-                       "(top 1..20, con sentido mayor/menor).",
+        "descripcion": "Ranking de zonas/asesores por visitas, visitas_ruteadas, rutas, "
+                       "km o pico de carga (top 1..20, con sentido mayor/menor). Devuelve "
+                       "`ordenado_por` con la métrica exacta usada y, en cada fila, "
+                       "`visitas_programadas_mes` (plan del mes) por separado de "
+                       "`visitas_ruteadas` (1er ciclo).",
         "parametros": {"type": "object", "properties": {
-            "orden": {"type": "string", "enum": ["visitas", "rutas", "km", "pico"],
-                      "description": "criterio de orden (por defecto visitas)"},
+            "orden": {"type": "string",
+                      "enum": ["visitas", "visitas_ruteadas", "rutas", "km", "pico"],
+                      "description": "criterio de orden (por defecto visitas = "
+                                     "visitas_programadas_mes)"},
             "sentido": {"type": "string", "enum": ["mayor", "menor"],
                         "description": "por defecto mayor"},
             "top": {"type": "integer", "description": "cuántas zonas (1-20, por defecto 10)"}},

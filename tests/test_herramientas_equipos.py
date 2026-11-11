@@ -48,8 +48,11 @@ def cache_vacia(tmp_path, monkeypatch):
 def test_herramientas_registradas():
     assert {"detalle_asesor", "ranking_asesores"} <= set(H.HERRAMIENTAS)
     assert len(H.HERRAMIENTAS) == 11
-    nombres = {s["function"]["name"] for s in H.schemas_tool()}
-    assert {"detalle_asesor", "ranking_asesores"} <= nombres
+    schemas = {s["function"]["name"]: s for s in H.schemas_tool()}
+    assert {"detalle_asesor", "ranking_asesores"} <= set(schemas)
+    ordenes = schemas["ranking_asesores"]["function"]["parameters"]["properties"]
+    assert ordenes["orden"]["enum"] == ["visitas", "visitas_ruteadas", "rutas",
+                                        "km", "pico"]
 
 
 def test_fixture_respeta_contrato():
@@ -116,10 +119,25 @@ def test_ranking_visitas_mayor(cache_equipos):
                    {"orden": "visitas", "sentido": "mayor", "top": 3})
     assert "error" not in r, r
     assert r["n_asesores"] == 5 and r["top"] == 3 and r["orden"] == "visitas"
+    # `visitas` = plan del mes completo: la columna exacta queda en `ordenado_por`
+    assert r["ordenado_por"] == "visitas_programadas_mes"
     assert [f["zona"] for f in r["filas"]] == ["Z03", "Z01", "Z02"]
-    assert r["filas"][0]["visitas"] == 930
-    assert set(r["filas"][0]) == {"zona", "equipo_codigo", "visitas", "n_rutas",
-                                  "km", "pico", "sobre_cap"}
+    assert r["filas"][0]["visitas_programadas_mes"] == 930
+    assert set(r["filas"][0]) == {"zona", "equipo_codigo", "visitas_programadas_mes",
+                                  "visitas_ruteadas", "n_rutas", "km", "pico",
+                                  "sobre_cap"}
+
+
+def test_ranking_visitas_ruteadas(cache_equipos):
+    """`orden=visitas_ruteadas` ordena por lo que quedó en las rutas del 1er ciclo."""
+    r = H.ejecutar("ranking_asesores", {"orden": "visitas_ruteadas"})
+    assert "error" not in r, r
+    assert r["ordenado_por"] == "visitas_ruteadas"
+    assert [f["zona"] for f in r["filas"]] == ["Z03", "Z01", "Z02", "Z05", "Z04"]
+    assert r["filas"][0]["visitas_ruteadas"] == 871
+    # las dos columnas de visitas viajan separadas y con valores distintos
+    assert r["filas"][0]["visitas_programadas_mes"] == 930
+    assert r["filas"][0]["visitas_programadas_mes"] != r["filas"][0]["visitas_ruteadas"]
 
 
 def test_ranking_pico_menor(cache_equipos):
@@ -131,9 +149,11 @@ def test_ranking_pico_menor(cache_equipos):
 
 def test_ranking_rutas_y_km(cache_equipos):
     por_rutas = H.ejecutar("ranking_asesores", {"orden": "rutas"})
+    assert por_rutas["ordenado_por"] == "n_rutas"
     assert por_rutas["filas"][0]["zona"] == "Z03"
     assert por_rutas["filas"][0]["n_rutas"] == 81
     por_km = H.ejecutar("ranking_asesores", {"orden": "km"})
+    assert por_km["ordenado_por"] == "km"
     assert por_km["filas"][0]["zona"] == "Z03"
     assert por_km["filas"][0]["km"] == 733.8
 
@@ -146,7 +166,9 @@ def test_ranking_top_limitado_a_20(cache_equipos):
 
 def test_ranking_orden_invalido(cache_equipos):
     r = H.ejecutar("ranking_asesores", {"orden": "costo"})
-    assert "error" in r and r["ordenes_validos"] == ["km", "pico", "rutas", "visitas"]
+    assert "error" in r
+    assert r["ordenes_validos"] == ["km", "pico", "rutas", "visitas",
+                                    "visitas_ruteadas"]
 
 
 def test_ranking_sentido_invalido(cache_equipos):
@@ -210,10 +232,17 @@ def test_no_abre_csv_ni_universo(cache_equipos, monkeypatch):
     assert not any(p.endswith(".csv") or "/data/" in p for p in abiertas), abiertas
 
 
-def test_sin_cache_devuelve_error(cache_vacia):
-    """Si cache/equipos.json no existe, devuelven `error` (nunca lanzan)."""
+def test_sin_cache_devuelve_error_limpio(cache_vacia):
+    """Sin cache/equipos.json: mensaje limpio, sin rutas de archivo ni trazas."""
     assert not (Path(cache_vacia) / "equipos.json").exists()
+    esperado = {"error": "Datos de asesores no disponibles (cache no generada)"}
     for nombre, entrada in (("detalle_asesor", {"zona": "Z01"}),
-                            ("ranking_asesores", {})):
+                            ("detalle_asesor", {"equipo": "EQ01"}),
+                            ("ranking_asesores", {}),
+                            ("ranking_asesores", {"orden": "visitas_ruteadas"})):
         r = H.ejecutar(nombre, entrada)
-        assert "error" in r and "precalculad" in r["error"], (nombre, r)
+        assert r == esperado, (nombre, entrada, r)
+        crudo = json.dumps(r, ensure_ascii=False)
+        assert ".json" not in crudo and "/" not in crudo and "\\" not in crudo
+        assert "Traceback" not in crudo and "Exception" not in crudo
+        assert "precompute" not in crudo and "cache/" not in crudo
