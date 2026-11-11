@@ -32,10 +32,6 @@ output/*.csv
 .env
 !.env.example
 
-# Cache precalculada (se regenera con `python -m app.precompute`)
-cache/*
-cache/*.json
-cache/*.log
 
 # Privacidad: mapa nombre->EQxx y snapshots de referencia (NUNCA versionar)
 app/knowledge/asesores_privado.json

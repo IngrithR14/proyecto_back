@@ -1,0 +1,84 @@
+INFO:     Started server process [341655]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:45022 - "GET /api/salud HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45036 - "GET /api/salud HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32952 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56424 - "GET /api/ruteo/comparacion HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56440 - "GET /api/montecarlo/mejor HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43674 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58900 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49378 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59120 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58826 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56440 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:44256 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55480 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:38806 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50902 - "GET /api/meta/universos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50912 - "GET /api/meta/params HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50920 - "GET /api/meta/universos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50930 - "GET /api/meta/params HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50956 - "GET /api/meta/params HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50942 - "GET /api/salud HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50972 - "GET /api/meta/calendario HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50988 - "GET /api/meta/universos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58814 - "GET /api/salud HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58830 - "GET /api/montecarlo/mejor HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58834 - "GET /api/meta/params HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58832 - "GET /api/meta/universos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58836 - "GET /api/ruteo/comparacion HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58850 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58862 - "GET /api/meta/universos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58878 - "GET /api/meta/params HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58884 - "GET /api/chat/salud HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46374 - "GET /api/meta/universos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46376 - "GET /api/meta/params HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46390 - "GET /api/eda/resumen HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46392 - "GET /api/eda/carga-zona?top=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49914 - "GET /api/meta/universos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49918 - "GET /api/meta/params HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49920 - "GET /api/montecarlo/mejor HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49932 - "GET /api/montecarlo/tabla HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49940 - "GET /api/geo/58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49942 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52736 - "GET /api/meta/universos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52746 - "GET /api/meta/params HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52756 - "GET /api/salud HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52760 - "GET /api/meta/params HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52768 - "GET /api/meta/calendario HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52784 - "GET /api/meta/universos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52798 - "GET /api/meta/universos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52812 - "GET /api/meta/params HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52824 - "GET /api/ruteo/comparacion HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46622 - "GET /api/meta/params HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46620 - "GET /api/meta/universos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46626 - "GET /api/chat/salud HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46638 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:46644 - "GET /api/meta/universos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46654 - "GET /api/meta/params HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46662 - "GET /api/eda/resumen HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46674 - "GET /api/eda/carga-zona?top=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/meta/universos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54340 - "GET /api/meta/params HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54348 - "GET /api/montecarlo/mejor HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54354 - "GET /api/montecarlo/tabla HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54366 - "GET /api/geo/58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60298 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:37696 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:36884 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:48558 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [341655]
+INFO:     Started server process [352667]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:46574 - "GET /api/salud HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [352667]
