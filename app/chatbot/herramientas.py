@@ -27,7 +27,7 @@ _LOCK = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
-# Acceso a cache (con cálculo bajo demanda para K no cacheadas)
+# Acceso a cache (SIN cálculo en runtime: todo sale de cache/*.json)
 # ---------------------------------------------------------------------------
 def _cache(nombre: str) -> Any | None:
     ruta = os.path.join(cfg.CACHE_DIR, nombre)
@@ -42,27 +42,17 @@ def _montecarlo() -> dict:
 
 
 def _asegurar_k(K: int) -> dict:
-    """Devuelve la estrategia K; si no está en cache, la calcula (con lock)."""
+    """Estrategia K desde `cache/montecarlo.json`; NUNCA se calcula en runtime.
+
+    Sin CSV, sin `cargar_universo()` ni `evaluar()` en tiempo de ejecución
+    (decisión FASE 5). Si la K pedida no está precalculada devuelve un error
+    con las K disponibles, para que el chat lo explique en lenguaje normal.
+    """
     mc = _montecarlo()
     if str(K) in mc.get("estrategias", {}):
         return mc["estrategias"][str(K)]
-    with _LOCK:
-        mc = _montecarlo()
-        if str(K) in mc.get("estrategias", {}):
-            return mc["estrategias"][str(K)]
-        from ..core.estructura import asignacion_capacidad
-        from ..core.geo import proyectar
-        from ..core.montecarlo import generar_entradas
-        from ..core.universo import cargar_universo
-        from ..precompute import evaluar
-        u = cargar_universo()
-        df = u.clientes.copy().reset_index(drop=True)
-        df["_uid"] = np.arange(len(df))
-        proyectar(df, col_grupo=None)
-        asistencia, trafico = generar_entradas(cfg.N_SIM, len(df), cfg.SEMILLA)
-        labels = asignacion_capacidad(df, K)
-        res, _ = evaluar(df, labels, asistencia, trafico, f"K={K}")
-        return res
+    return {"error": "K no precalculado",
+            "k_disponibles": sorted(int(k) for k in mc.get("estrategias", {}))}
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +113,8 @@ def factibilidad(entrada: dict | None = None) -> dict:
         etiqueta = "ACTUAL"
     else:
         res = _asegurar_k(int(K))
+        if "error" in res:        # K sin precalcular: no se calcula en runtime
+            return res
         etiqueta = f"K={int(K)}"
     if not res:
         return {"error": f"{etiqueta} no disponible aún"}
@@ -142,6 +134,8 @@ def estrategia(entrada: dict | None = None) -> dict:
         etiqueta = "ACTUAL"
     else:
         res = _asegurar_k(int(K))
+        if "error" in res:        # K sin precalcular: no se calcula en runtime
+            return res
         etiqueta = f"K={int(K)}"
     if not res:
         return {"error": f"{etiqueta} no disponible aún"}
