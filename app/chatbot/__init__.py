@@ -8,12 +8,12 @@ from __future__ import annotations
 from typing import Any
 
 from . import herramientas
-from .orquestador import GroqProveedor, MockProveedor, responder
+from .orquestador import GroqProveedor, LLMError, MockProveedor, responder
 from .sesiones import ALMACEN
 from .validador import COLUMNAS_PROHIBIDAS, validar_salida
 
 __all__ = ["chat", "herramientas", "responder", "GroqProveedor", "MockProveedor",
-           "validar_salida", "COLUMNAS_PROHIBIDAS", "ALMACEN"]
+           "LLMError", "validar_salida", "COLUMNAS_PROHIBIDAS", "ALMACEN"]
 
 
 def chat(pregunta: str, sid: str = "default",

@@ -25,6 +25,41 @@ from .sesiones import ALMACEN
 log = logging.getLogger("app.chatbot")
 
 
+class LLMError(RuntimeError):
+    """Error del proveedor LLM ya traducido, con `codigo` mapeable por /chat.
+
+    `codigo` es el status HTTP del proveedor (429, 400, 401, 403, 404, 5xx…) o
+    `"timeout"`. `original` conserva la excepción httpx para el log. Es subclase
+    de `RuntimeError` para no romper el manejo existente (falta de key/modelo →
+    503).
+    """
+
+    def __init__(self, mensaje: str, codigo: int | str | None = None,
+                 original: Exception | None = None):
+        super().__init__(mensaje)
+        self.codigo = codigo
+        self.original = original
+
+
+def _a_llmerror(e: Exception) -> Exception:
+    """Traduce httpx → `LLMError` AL FINAL (tras agotar el reintento con fallback).
+
+    - `HTTPStatusError` → `LLMError(codigo=status)`. El cuerpo de la respuesta
+      NO se incluye en el mensaje: podría filtrar nombres de modelo (D5.1).
+    - `TimeoutException` → `LLMError(codigo="timeout")`.
+    - `TransportError` que no es timeout (p. ej. sin red) se devuelve tal cual:
+      en /chat cae en el caso genérico → 500 con `log.exception`.
+    """
+    if isinstance(e, httpx.HTTPStatusError):
+        return LLMError(f"El proveedor LLM rechazó la solicitud "
+                        f"(HTTP {e.response.status_code}).",
+                        codigo=e.response.status_code, original=e)
+    if isinstance(e, httpx.TimeoutException):
+        return LLMError("El proveedor LLM no respondió a tiempo (timeout).",
+                        codigo="timeout", original=e)
+    return e
+
+
 class Proveedor(Protocol):
     def completar(self, mensajes: list[dict], tools: list[dict],
                   max_tokens: int | None = None) -> dict:
@@ -159,6 +194,43 @@ def ejecutar_tool_call(tc: dict) -> dict:
     return H.ejecutar(nombre, args)
 
 
+def _bucle(mensajes: list[dict], tools: list[dict], trazas: list[dict],
+           proveedor: Proveedor) -> str | None:
+    """Bucle de rondas de herramientas; devuelve la respuesta final o None."""
+    for _ in range(cfg.CHAT_MAX_TOOL_ITER):
+        r = proveedor.completar(mensajes, tools)
+        tool_calls = r.get("tool_calls") or []
+        if not tool_calls:
+            contenido = r.get("content") or ""
+            truncado = r.get("finish_reason") == "length"
+            # D5.4: content vacío o truncado (finish_reason="length") no es válido
+            if (not contenido.strip() or truncado):
+                r2 = proveedor.completar(mensajes, tools,
+                                         max_tokens=2 * cfg.LLM_MAX_TOKENS)
+                c2 = r2.get("content") or ""
+                if c2.strip() and r2.get("finish_reason") != "length":
+                    contenido = c2
+                    truncado = False
+            if not contenido.strip() or truncado:
+                return ("No pude generar una respuesta completa. "
+                        "Reformula la pregunta.")
+            return contenido
+        # registrar mensaje del asistente con tool_calls (sin reasoning)
+        mensajes.append({"role": "assistant", "content": r.get("content"),
+                         "tool_calls": tool_calls})
+        for tc in tool_calls:
+            nombre = tc.get("function", {}).get("name", "?")
+            args = _parse_args(tc.get("function", {}).get("arguments"))
+            salida = H.ejecutar(nombre, args)
+            trazas.append({"nombre": nombre, "entrada": args, "salida": salida})
+            mensajes.append({
+                "role": "tool",
+                "tool_call_id": tc.get("id", nombre),
+                "content": json.dumps(salida, ensure_ascii=False, default=str),
+            })
+    return None
+
+
 def responder(pregunta: str, sid: str = "default",
               proveedor: Proveedor | None = None) -> dict:
     """Bucle completo: pregunta → (herramientas)* → respuesta final.
@@ -175,39 +247,19 @@ def responder(pregunta: str, sid: str = "default",
 
     trazas: list[dict] = []
     respuesta_final = None
-    for _ in range(cfg.CHAT_MAX_TOOL_ITER):
-        r = proveedor.completar(mensajes, tools)
-        tool_calls = r.get("tool_calls") or []
-        if not tool_calls:
-            contenido = r.get("content") or ""
-            truncado = r.get("finish_reason") == "length"
-            # D5.4: content vacío o truncado (finish_reason="length") no es válido
-            if (not contenido.strip() or truncado):
-                r2 = proveedor.completar(mensajes, tools,
-                                         max_tokens=2 * cfg.LLM_MAX_TOKENS)
-                c2 = r2.get("content") or ""
-                if c2.strip() and r2.get("finish_reason") != "length":
-                    contenido = c2
-                    truncado = False
-            if not contenido.strip() or truncado:
-                respuesta_final = ("No pude generar una respuesta completa. "
-                                   "Reformula la pregunta.")
-            else:
-                respuesta_final = contenido
-            break
-        # registrar mensaje del asistente con tool_calls (sin reasoning)
-        mensajes.append({"role": "assistant", "content": r.get("content"),
-                         "tool_calls": tool_calls})
-        for tc in tool_calls:
-            nombre = tc.get("function", {}).get("name", "?")
-            args = _parse_args(tc.get("function", {}).get("arguments"))
-            salida = H.ejecutar(nombre, args)
-            trazas.append({"nombre": nombre, "entrada": args, "salida": salida})
-            mensajes.append({
-                "role": "tool",
-                "tool_call_id": tc.get("id", nombre),
-                "content": json.dumps(salida, ensure_ascii=False, default=str),
-            })
+    try:
+        respuesta_final = _bucle(mensajes, tools, trazas, proveedor)
+    except (httpx.HTTPStatusError, httpx.TimeoutException) as e:
+        # AL FINAL de la cadena: se traduce a LLMError con `codigo` para /chat.
+        # (Los httpx crudos se propagan desde GroqProveedor.completar para no
+        #  alterar el contrato de reintento D5; aquí es donde se traducen.)
+        err = _a_llmerror(e)
+        log.warning("Proveedor LLM falló tras reintentos: %s", err)
+        raise err from e
+    except httpx.TransportError as e:
+        raise LLMError(f"Error de red con el proveedor LLM: {e}",
+                       codigo=None, original=e) from e
+
     if respuesta_final is None:
         respuesta_final = ("No pude completar la respuesta (límite de herramientas "
                            "alcanzado). Reformula la pregunta.")

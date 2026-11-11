@@ -264,6 +264,8 @@ class ChatIn(BaseModel):
     sesion: str = "default"
 
 
+log = logging.getLogger("app.api")
+
 _RL: dict[str, deque] = defaultdict(deque)
 
 
@@ -278,6 +280,32 @@ def _rate_limit(sid: str, max_por_min: int = 20) -> bool:
     return True
 
 
+def _http_llm(e: "chatbot.LLMError") -> HTTPException:
+    """Mapea un `LLMError` a un estado HTTP estable para /chat.
+
+    - 429 (rate limit de Groq) → 429: el front avisa y permite reintentar.
+    - 400/401/403/404 y timeout → 503 (el backend está vivo, pero el proveedor
+      LLM no sirvió la consulta); mensaje específico por código.
+    - El resto (5xx del proveedor, red, excepciones) → 500 con `log.exception`.
+    NUNCA se devuelven 502/504: el front los traduce a "No hay conexión".
+    """
+    cod = e.codigo
+    if cod == 429:
+        return HTTPException(429, "Límite de consultas del proveedor agotado; "
+                                  "espera un minuto y vuelve a intentarlo.")
+    if cod in (400, 401, 403, 404):
+        return HTTPException(503, f"El proveedor LLM rechazó la consulta "
+                                  f"(HTTP {cod}); el asistente no está disponible "
+                                  "por ahora. Inténtalo más tarde.")
+    if cod == "timeout":
+        return HTTPException(503, "El proveedor LLM no respondió a tiempo; "
+                                  "intenta de nuevo en unos segundos.")
+    log.exception("Error no mapeado del proveedor LLM (codigo=%s): %s", cod, e,
+                  exc_info=e.original)
+    return HTTPException(500, "Error interno al consultar el asistente LLM. "
+                              "Inténtalo más tarde.")
+
+
 @app.post("/api/chat")
 def chat(entrada: ChatIn, request: Request) -> dict:
     from . import chatbot
@@ -288,8 +316,14 @@ def chat(entrada: ChatIn, request: Request) -> dict:
         raise HTTPException(422, "pregunta vacía")
     try:
         return chatbot.chat(entrada.pregunta, sid=sid)
-    except RuntimeError as e:
+    except chatbot.LLMError as e:                 # proveedor LLM (ya traducido)
+        raise _http_llm(e)
+    except RuntimeError as e:                     # falta key/modelo u otro controlado
         raise HTTPException(503, str(e))
+    except Exception as e:                        # cualquier otra → 500 + log
+        log.exception("Error inesperado en /api/chat", exc_info=e)
+        raise HTTPException(500, "Error interno al atender la consulta. "
+                                 "Inténtalo más tarde.")
 
 
 @app.get("/api/chat/salud")
@@ -309,4 +343,7 @@ def chat_salud() -> dict:
 # ---------------------------------------------------------------------------
 @app.exception_handler(HTTPException)
 async def _http_exc(request: Request, exc: HTTPException):
-    return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
+    # `detail` es el contrato del front; `error` se mantiene por compatibilidad
+    # con las pruebas existentes (mismo valor en ambas claves).
+    return JSONResponse(status_code=exc.status_code,
+                        content={"error": exc.detail, "detail": exc.detail})

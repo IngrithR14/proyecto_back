@@ -195,6 +195,77 @@ def test_chat_pregunta_vacia(cliente_api):
 
 
 # ---------------------------------------------------------------------------
+# Errores del proveedor LLM → estados HTTP estables (Bloque A)
+# El endpoint se prueba con `chatbot.chat` monkeypateado: sin red ni API key.
+# ---------------------------------------------------------------------------
+def _fallo(exc):
+    def _boom(*a, **k):
+        raise exc
+    return _boom
+
+
+def _post_chat(cliente_api, monkeypatch, exc, sesion):
+    from app import chatbot
+    monkeypatch.setattr(chatbot, "chat", _fallo(exc))
+    return cliente_api.post("/api/chat",
+                            json={"pregunta": "hola", "sesion": sesion})
+
+
+def test_chat_429_rate_limit_llm(cliente_api, monkeypatch):
+    """Un 429 del proveedor se devuelve como 429 (el front permite reintentar)."""
+    from app.chatbot import LLMError
+    r = _post_chat(cliente_api, monkeypatch, LLMError("rate limit", codigo=429),
+                   sesion="t_a_429")
+    assert r.status_code == 429
+    assert r.headers["content-type"].startswith("application/json")
+    assert "detail" in r.json()
+    assert "Internal Server Error" not in r.text
+
+
+def test_chat_503_por_estado_llm(cliente_api, monkeypatch):
+    """400/401/403/404 y timeout del proveedor → 503 con mensaje específico."""
+    from app.chatbot import LLMError
+    casos = [(400, "rechazó"), (401, "rechazó"), (403, "rechazó"), (404, "rechazó"),
+             ("timeout", "tiempo")]
+    for i, (cod, texto) in enumerate(casos):
+        r = _post_chat(cliente_api, monkeypatch, LLMError("fallo", codigo=cod),
+                       sesion=f"t_a_503_{i}")
+        assert r.status_code == 503, cod
+        assert r.headers["content-type"].startswith("application/json")
+        assert "detail" in r.json()
+        assert texto in r.json()["detail"]
+        assert "Internal Server Error" not in r.text
+
+
+def test_chat_503_falta_key(cliente_api, llm_disponible):
+    """Sin API key el chat sigue respondiendo 503 (comportamiento previo)."""
+    if llm_disponible:
+        pytest.skip("LLM configurado; el chat sí responde")
+    r = cliente_api.post("/api/chat", json={"pregunta": "hola", "sesion": "t_a_key"})
+    assert r.status_code == 503
+    assert "detail" in r.json()
+
+
+def test_chat_500_excepcion_inesperada(cliente_api, monkeypatch):
+    """Cualquier otra excepción → 500 JSON, jamás la página 'Internal Server Error'."""
+    r = _post_chat(cliente_api, monkeypatch, ValueError("boom inesperado"),
+                   sesion="t_a_500")
+    assert r.status_code == 500
+    assert r.headers["content-type"].startswith("application/json")
+    assert "detail" in r.json()
+    assert "Internal Server Error" not in r.text
+
+
+def test_chat_nunca_devuelve_502_504(cliente_api, monkeypatch):
+    """El front traduce 502/504 a 'No hay conexión': /chat no debe emitirlos."""
+    from app.chatbot import LLMError
+    for cod in (500, 502, 503, 504):
+        r = _post_chat(cliente_api, monkeypatch, LLMError("fallo", codigo=cod),
+                       sesion=f"t_a_nodup_{cod}")
+        assert r.status_code not in (502, 504), f"codigo {cod} produjo {r.status_code}"
+
+
+# ---------------------------------------------------------------------------
 # Privacidad global: ninguna respuesta expone columnas personales
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("ep", [
