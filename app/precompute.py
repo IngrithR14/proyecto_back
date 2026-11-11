@@ -473,7 +473,7 @@ def precompute_equipos() -> None:
         print("  ⚠ falta cache/rutas.json: visitas_ruteadas/n_rutas/km quedan en 0")
     por_zona: dict[str, dict[str, float]] = {}
     for quincena in ("1", "2"):
-        for dia in esc.get(quincena) or []:
+        for dia in (esc.get(quincena) or {}).get("rutas") or []:
             z = str(dia.get("asesor") or "")
             agg = por_zona.setdefault(z, {"n_rutas": 0.0, "visitas_ruteadas": 0.0,
                                           "km": 0.0})

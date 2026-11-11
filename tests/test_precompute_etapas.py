@@ -195,13 +195,39 @@ def _datos_sinteticos() -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def _rutas_sinteticas() -> dict:
+    """Misma forma que `cache/rutas.json` real: cada quincena es un DICT con
+    `rutas` (no una lista), que es lo que lee `precompute_equipos()`.
+
+    Datos ficticios: zonas Z01..Z03 y códigos de cliente cortos (sin dígitos
+    largos, para no parecer cédulas).
+    """
+    def _quincena(n: int, rutas: list[dict]) -> dict:
+        return {
+            "quincena": n,
+            "n_rutas": len(rutas),
+            "total_visitas": sum(r["n_visitas"] for r in rutas),
+            "total_km": round(sum(r["km"] for r in rutas), 2),
+            "n_asesores": len({r["asesor"] for r in rutas}),
+            "rutas": rutas,
+        }
+
+    q1 = [
+        {"fecha": "2026-03-02", "asesor": "Z01", "n_visitas": 38, "km": 12.5,
+         "secuencia": ["C01", "C02"], "excede_cap": False},
+        {"fecha": "2026-03-02", "asesor": "Z02", "n_visitas": 50, "km": 9.0,
+         "secuencia": ["C03"], "excede_cap": True},
+    ]
+    q2 = [
+        {"fecha": "2026-03-16", "asesor": "Z01", "n_visitas": 41, "km": 13.5,
+         "secuencia": ["C04", "C05"], "excede_cap": False},
+    ]
     return {
-        "actual": {
-            "1": [{"asesor": "Z01", "n_visitas": 38, "km": 12.5},
-                  {"asesor": "Z02", "n_visitas": 50, "km": 9.0}],
-            "2": [{"asesor": "Z01", "n_visitas": 41, "km": 13.5}],
-        },
-        "recomendada": {"1": [], "2": []},
+        "actual": {"k_territorios": 3, "es_recomendada": True,
+                   "etiqueta": "ACTUAL (zonas ficticias)",
+                   "1": _quincena(1, q1), "2": _quincena(2, q2)},
+        "recomendada": {"k_territorios": 3, "es_recomendada": False,
+                        "etiqueta": "Recomendada (ficticia)",
+                        "1": _quincena(1, []), "2": _quincena(2, [])},
     }
 
 
