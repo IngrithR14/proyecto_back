@@ -11,6 +11,7 @@ reintenta. Sólo se usa `message.content`; cualquier campo `reasoning` se ignora
 """
 from __future__ import annotations
 
+import time
 import json
 import logging
 from typing import Any, Protocol
@@ -126,6 +127,16 @@ class GroqProveedor:
         # timeout o error de red
         return isinstance(exc, (httpx.TimeoutException, httpx.TransportError))
 
+    @staticmethod
+    def _espera_s(exc: Exception, tope: float = 15.0) -> float:
+        """Segundos a esperar si el proveedor dio 429 (lee retry-after); 0 si no aplica."""
+        if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+            try:
+                return min(float(exc.response.headers.get("retry-after", "5")), tope)
+            except ValueError:
+                return 5.0
+        return 0.0
+
     def completar(self, mensajes: list[dict], tools: list[dict],
                   max_tokens: int | None = None) -> dict:
         if not self.api_key:
@@ -133,18 +144,34 @@ class GroqProveedor:
         if not self.model:
             raise RuntimeError("LLM_MODEL no definido en .env.")
         max_tokens = max_tokens or cfg.LLM_MAX_TOKENS
+        errores = (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError)
         try:
             r = self._llamar(self.model, mensajes, tools, max_tokens)
             self.modelo_usado = self.model
             return r
-        except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as e:
-            if not self._reintentable(e) or not self.model_fallback:
+        except errores as e:
+            if not self._reintentable(e):
                 raise
-            log.warning("Modelo principal (%s) falló (%s); reintento con fallback",
-                        self.model, e)
-            r = self._llamar(self.model_fallback, mensajes, tools, max_tokens)
-            self.modelo_usado = self.model_fallback
-            log.info("Respuesta atendida por el modelo fallback: %s", self.model_fallback)
+            ultimo = e
+            if self.model_fallback:
+                log.warning("Modelo principal (%s) falló (%s); reintento con fallback",
+                            self.model, e)
+                try:
+                    r = self._llamar(self.model_fallback, mensajes, tools, max_tokens)
+                    self.modelo_usado = self.model_fallback
+                    return r
+                except errores as e2:
+                    if not self._reintentable(e2):
+                        raise
+                    ultimo = e2
+            # ambos modelos agotados: una espera corta y un último intento
+            espera = self._espera_s(ultimo) or self._espera_s(e)
+            if espera <= 0:
+                raise ultimo
+            log.warning("Límite del proveedor; espero %.1f s y reintento", espera)
+            time.sleep(espera)
+            r = self._llamar(self.model, mensajes, tools, max_tokens)
+            self.modelo_usado = self.model
             return r
 
 

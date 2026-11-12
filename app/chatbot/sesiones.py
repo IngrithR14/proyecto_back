@@ -6,7 +6,7 @@ import time
 from typing import Any
 
 TTL_S = 3600.0          # 1 h
-MAX_MENSAJES = 40       # por sesión
+MAX_MENSAJES = 6       # por sesión
 
 
 class Sesion:
